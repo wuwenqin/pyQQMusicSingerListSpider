@@ -1,3 +1,7 @@
+from threading import Thread
+
+from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QTextCursor
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5 import QtCore, QtGui, QtWidgets
 from multiprocessing import Pool,cpu_count,freeze_support
@@ -5,7 +9,16 @@ import sys, os,re,urllib,traceback
 from time import *
 import tkinter.messagebox as msg
 
-from spiderQQMusic.spider.musicSpider import musicSpiderTogetInformation
+from spiderQQMusic.spider.musicSpider import musicSpiderTogetInformation, pieAnalysis, Histogram
+
+
+# 接收控制台上的信息
+class Stream(QObject):
+    """Redirects console output to text widget."""
+    newText = pyqtSignal(str)
+
+    def write(self, text):
+        self.newText.emit(str(text))
 
 
 class Ui_Form(QtWidgets.QWidget):
@@ -17,11 +30,20 @@ class Ui_Form(QtWidgets.QWidget):
         self.start_page=1
         self.dirname=''
         self.word=''
+        sys.stdout = Stream(newText=self.onUpdateText) # 接收控制台信息
         pass
+    # 更新显示信息
+    def onUpdateText(self, text):
+        """Write console output to text widget."""
+        cursor = self.textEdit.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText(text)
+        self.textEdit.setTextCursor(cursor)
+        self.textEdit.ensureCursorVisible()
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
-        Form.resize(480, 180)
+        Form.resize(500, 574)
         Form.setWindowIcon(QtGui.QIcon('./cat.ico'))
         self.gridLayout = QtWidgets.QGridLayout(Form)
         self.gridLayout.setObjectName("gridLayout")
@@ -77,6 +99,23 @@ class Ui_Form(QtWidgets.QWidget):
         self.bt_auto_j.setObjectName("bt_auto_j")
         self.bt_auto_j.clicked.connect(self.auto_jobs)
         self.gridLayout.addWidget(self.bt_auto_j, 2, 6, 1, 1)
+        # 列表
+        self.textEdit = QtWidgets.QTextEdit(Form)
+        self.textEdit.setObjectName("textEdit")
+        self.gridLayout.addWidget(self.textEdit, 3, 0, 1, 7)
+        self.textEdit.ensureCursorVisible()
+
+        #饼状图分析按钮
+        self.pushButton = QtWidgets.QPushButton(Form)
+        self.pushButton.setObjectName("pushButton")
+        self.gridLayout.addWidget(self.pushButton, 0, 5, 1, 1)
+        self.pushButton.clicked.connect(self.analysis)
+
+        # 柱状图分析按钮
+        self.pushButton1 = QtWidgets.QPushButton(Form)
+        self.pushButton1.setObjectName("pushButton1")
+        self.gridLayout.addWidget(self.pushButton1, 1, 5, 1, 1)
+        self.pushButton1.clicked.connect(self.analysisHis)
 
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
@@ -97,15 +136,41 @@ class Ui_Form(QtWidgets.QWidget):
         self.comboBox.setItemText(3, _translate("Form", "欧美"))
         self.comboBox.setItemText(4, _translate("Form", "日本"))
         self.comboBox.setItemText(5, _translate("Form", "韩国"))
+        self.pushButton.setText(_translate("Form", "饼状图展示"))
+        self.pushButton1.setText(_translate("Form", "柱状图展示"))
+
+#柱状图
+    def analysisHis(self):
+        Histogram()
+
+    # 饼状图分析按钮链接：
+    def analysis(self):
+        pieAnalysis()
 
     def select_dir(self):
         path = QFileDialog.getExistingDirectory(self, '选择保存路径', (self.dirname if self.dirname else './'))
         self.edit_dir.setText(path)
 
+    def closeEvent(self, event):
+        """Shuts down application on close."""
+        # Return stdout to defaults.
+        sys.stdout = sys.__stdout__
+        super().closeEvent(event)
+
+
     def auto_jobs(self):
         self.spin_jobs.setValue(cpu_count())
 
     def crawl(self):
+        # 创建 Thread 类的实例对象
+        thread = Thread(
+            # target 参数 指定 新线程要执行的函数
+            # 注意，这里指定的函数对象只能写一个名字，不能后面加括号，
+            # 如果加括号就是直接在当前线程调用执行，而不是在新线程中执行了
+            target=self.crawls)
+        thread.start()
+
+    def crawls(self):
         self.dirname, self.word = self.edit_dir.text(), self.edit_key.text()
         if not self.dirname:
             print('请指定保存目录！')
@@ -133,8 +198,8 @@ class Ui_Form(QtWidgets.QWidget):
         end_time = time()
         run_time = end_time - begin_time
         print('爬取完毕！\n共爬取{s}首歌曲，保存到文件夹:{d}，运行时间为{time}'.format(s=nb_succeed,d=self.dirname,time=run_time))
-        msg = QMessageBox(QMessageBox.Information, '数据爬取成功!', '爬取完毕！\n共爬取{s}首歌曲，保存到文件夹:{d}，运行时间为{time}'.format(s=nb_succeed,d=self.dirname,time=run_time))  # 小窗口提示框
-        msg.exec_()
+        # msg = QMessageBox(QMessageBox.Information, '数据爬取成功!', '爬取完毕！\n共爬取{s}首歌曲，保存到文件夹:{d}，运行时间为{time}'.format(s=nb_succeed,d=self.dirname,time=run_time))  # 小窗口提示框
+        # msg.exec_()
 
 # 爬虫页面初始化
 def musicInforSpiderFramInit():
